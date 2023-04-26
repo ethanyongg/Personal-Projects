@@ -1,0 +1,617 @@
+---
+title: A multi-variate prediction model to determine housing prices in New York 
+
+# Use letters for affiliations
+author:
+  - name: Ethan Yong (510067773), Sandithi Lewanda (500545654), Bradon Holland (500695269), Michael Nguyen (510249955), Dan Mahesh (500501362)
+
+keywords:
+  - CC07E2
+  - Github - https://github.sydney.edu.au/bhol6947/CC07E2
+
+# Optional: line of arbitrary text with additional information.
+# Could be used, for example, to mention the bibliographic info in a post-print.
+# If not specified, defaults to "This version was compiled on \today"
+#date_subtitle: Published in *Journal of Statistical Software*, 2018
+
+# For footer text  TODO(fold into template, allow free form two-authors)
+#lead_author_surname: Author and Author
+
+# Place eg a DOI URL or CRAN Package URL here
+doi_footer: "https://github.sydney.edu.au/bhol6947/CC07E2"
+
+# Abstract
+abstract: |
+  Abstract: This report aims to analyze the key predictors that impact New York Housing prices. By assuming there is a linear relationship between price and predictors, the step-wise regression selection method using the Akaike information criterion was used to select the best predictors. The model was iteratively checked by transforming the model to have log features to meet all linearity assumptions. Subsequently, multicollinearity checks were used to determine the ultimate model and ensure model stability. It was found that the key variables impacting the prices of New York were living area, land value, waterfront, new construct, heating type, lot size, central air, age, rooms and bathrooms. However, the analysis is limited as the model may not be useful beyond 2006, the data has biases, significant predictors of house prices were not originally included in the dataset, and non-parametric tests may be required due to some assumption violation. 
+
+# Paper size for the document, values of letter and a4
+papersize: letter
+
+# Font size of the document, values of 9pt (default), 10pt, 11pt and 12pt
+fontsize: 8pt
+
+# Optional: Enable section numbering, default is unnumbered
+numbersections: true
+
+# Optional: Specify the depth of section number, default is 5
+#secnumdepth: 5
+
+# Optional: Skip inserting final break between acknowledgements, default is false
+skip_final_break: true
+
+# Optional: Bibliography 
+bibliography: pinp
+
+
+# Customize footer, eg by referencing the vignette
+footer_contents: "CC07E2"
+
+# Produce a pinp document
+output: pinp::pinp
+
+# Required: Vignette metadata for inclusion in a package.
+#vignette: >
+ # %\VignetteIndexEntry{YourPackage-vignetteentry}
+ # %\VignetteKeywords{YourPackage, r, anotherkeyword}
+ # %\VignettePackage{YourPackage}
+ # %\VignetteEngine{knitr::rmarkdown}
+---
+
+# Introduction 
+
+Access to quality, affordable housing is fundamental to well-being. Hence this report aims to help New York property valuation companies make fair pricing decisions by analysing the intrinsic features of houses. It is initially hypothesised that factors like lot size, waterfront features, and age are the most important factors that shape a house’s price. 
+
+# Data Description
+
+The data is classified as secondary data with the features of 1734 houses in Saratoga County, New York, USA in 2006  randomly sampled from a Saratoga Country directory. It can be assumed that this dataset avoids non-response bias as it was originally taken from public records from Saratoga County, based on mandatory tax recording data (Saratoga County, 2006). More biases and limitations will be discussed further below. 
+
+The data has 1734 observations and is recorded in wide format with a mix of quantitative and qualitative 16 variables such as “price” and  “lotsize” recorded per each house.
+
+## Data Cleaning
+Dataset was cleaned using tidyverse (Wickham, 2017) by removing dummy variables, converting categorical variables like waterfront features into factors to ensure it was captured by the regression model, and checking for missing values. 
+
+
+```{r, message = FALSE, echo = FALSE}
+# Import Data
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(patchwork)
+data <- read.delim("housing-prices-ge19.txt")
+data <- data |>
+  select(1:16) |>
+  janitor::clean_names()
+
+data <- data |>
+  mutate(
+    waterfront = factor(waterfront, labels = c("False", "True")),
+    new_construct = factor(new_construct, labels = c("False", "True")),
+    central_air = factor(central_air, labels = c("False", "True")),
+    log_price = log(price),
+    log_lot_size = log(lot_size+1),
+    log_age = log(age+1),
+    log_land_value = log(land_value),
+    log_living_area = log(living_area),
+    log_pct_college = log(pct_college)
+    )
+```
+
+
+# Analysis
+
+```{r {Heatmap}, echo = FALSE, fig.width= 3, fig.height = 3, fig.cap= "Heatmap of correlations between quantitative variables", fig.pos= 'h',out.width= "70%"}
+cor_mat = data |>
+  select(price, lot_size, age, land_value, living_area, pct_college, bedrooms, fireplaces, bathrooms, rooms) |>
+  cor()
+
+melted_cor_mat = cor_mat |>
+  data.frame() |>
+  rownames_to_column(var = "var1") |>
+  gather(key = "var2", value = "cor", -var1)
+
+heatmap <- ggplot(data = melted_cor_mat, aes(x = var1, y = var2, fill = cor)) +
+  geom_tile() +
+  theme_minimal(base_size = 10) +
+  scale_fill_gradient2(
+    low = "blue",
+    high = "red",
+    mid = "white",
+    midpoint = 0,
+    limit = c(-1, 1)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+suppressMessages(ggsave("heatmap.pdf", heatmap))
+
+heatmap
+```
+
+```{r {Full Model}, echo = FALSE}
+library(equatiomatic)
+full_model = lm(price ~ lot_size + waterfront + age + land_value + new_construct + central_air + fuel_type + heat_type + sewer_type + living_area + pct_college + bedrooms + fireplaces + bathrooms + rooms, data = data)
+
+#extract_eq(full_model, wrap = T, terms_per_line = 2, use_coefs = T, 
+           # coef_digits = 2)
+```
+
+## Variable Selection
+
+Backwards stepwise selection was implemented to determine the most important predictors. Variables in the full model were then subsequently dropped when measured against the AIC which determines the model with greatest amount of variation using the least amount of predictors. When the AIC was lower than the previous model it would be accepted as the new model; this process would continue until the final model remains. Implementing the backwards selection resulted in 4 variables being dropped from the full model (fuel_type, sewer_type, pct_college, fireplaces). 
+
+To validate our findings, a forward model was also performed. This method started with the null model which initally contained no variables. Next, the most significant variables were added for each iteration until the AIC was no longer higher than the previous model.
+
+After comparing the results, it was discovered that the forwards model was identical to the backwards model which reinforces the validity of the model. In cases like this the backward model is usually generally the preferred method as the forward model produces suppressor effects sometimes. However in this case there is no significance.
+
+
+```{r Backward Model, echo = FALSE, results= 'hide'}
+library(kableExtra, warn.conflicts = FALSE)
+#Create linear model from given data
+M1 = lm(price ~ lot_size + waterfront + age + land_value + new_construct + central_air + fuel_type + heat_type + sewer_type + living_area + pct_college + bedrooms + fireplaces + bathrooms + rooms, data = data)
+#Perform Backward Model Selection
+step.back.aic = step(M1, 
+                     direction = "backward", 
+                     trace = FALSE)
+#Display Summary
+round(summary(step.back.aic)$coef,3) %>%
+  kbl() %>%
+  
+  kable_styling()
+
+summary(step.back.aic)
+```
+
+```{r Forward model, echo = FALSE, results= 'hide'}
+M0 = lm(price ~ 1, data = data) #NULL Model
+step.fwd.aic = step(M0, scope = list(lower = M0, upper = M1),direction = "forward", trace = FALSE, show.aic = TRUE)
+
+summary(step.fwd.aic)
+```
+
+```{r forward model, results='hide', echo = FALSE, results='hide'}
+add1(step.fwd.aic, test = "F", scope = M1)
+```
+
+```{r Comparison Table, echo=FALSE, message=FALSE}
+library(kableExtra)
+library(webshot)
+library(magick)
+
+table1 <- sjPlot::tab_model(step.fwd.aic, step.back.aic, show.ci = FALSE, show.aic = TRUE,
+  dv.labels = c("Forward model", "Backward model"),
+  file = "table1.png")
+```
+
+## Assumption Checks for Stepwise Regression Model
+**Independence:** Some independence is already assumed due to the design of data collection. However, it is expected that this assumption may be slightly skewed as the price of a house in one area is inevitably impacted by those around it.  
+
+**Linearity:** While the residual plot (Figure 3) for the Step AIC model highlighted that points were symmetrically distributed above and below the zero axis, the scatterplots (Figure 6) of the individual variables showed that most of the independent variables against “price” were severely distorted. To remedy this, quantitative independent variables were logged. 
+
+**Homoscedasticity:** While most residual data points are randomly clustered in nature and evenly spaced, there appears to be some form of heteroscedasticity as the distances between some data points “fanned out” as the fitted values increased(Figure 3). This indicates that for a few data points, the predicted error value is increasing due to the presence of outliers.  
+
+**Normality:** From the QQPlot, our normality assumption appears to be severely violated for the start and end of the axis as seen by the number of outliers (Figure 3). However, due to the central limit theorem (>30 observations), the sample is approximately normal, and valid inferences can be made.
+
+```{r Assumption check simple model, echo= FALSE,fig.show='hide',include = FALSE, message = FALSE, fig.height= 4, fig.width= 4, out.width= "49%", fig.align='center', fig.show='hold', fig.cap= "Residual and QQplot for model selected through AIC method", fig.pos= 'h'}
+library(ggfortify)
+v1_model=lm(price ~ living_area + land_value + bathrooms + waterfront + new_construct + heat_type + lot_size + central_air + age + rooms + bedrooms, data=data)
+
+plot1 <- autoplot(v1_model, which = 1)
+
+suppressMessages(ggsave("plot1.png"))
+
+plot2 <- autoplot(v1_model, which = 2)
+
+suppressMessages(ggsave("plot2.png"))
+knitr::include_graphics(c("plot1.png","plot2.png"))
+```
+
+```{r {Correlation Matrix}, echo= FALSE, message = FALSE,fig.show='hide', fig.height= 4, fig.width= 4, out.width= "49%", fig.align='center', fig.show='hold'}
+# Correlation Matrix
+library(GGally)
+
+cor_matrix <- data |>
+  select(price, lot_size, age, land_value, living_area, pct_college, bedrooms, fireplaces, bathrooms, rooms) |>
+  ggpairs(progress = FALSE) +
+  theme_bw(base_size = 5)
+
+suppressMessages(ggsave("cor_matrix.pdf",cor_matrix))
+```
+
+## Log Transformation
+
+To resolve issues with linearity, normality, and homoscedasticity,  log transformations were undertaken on the predictors selected by the AIC method to create a log-linear (dependent variable was logged) and a log-log model (both dependent and quantitative independent variables were logged).  Note that the scatterplot highlighted living_age was fairly linear and didn’t require to be transformed but logging this variable improved the R^2 from 0.58 to 0.59. The log-log model was chosen as the final model as it had the highest R^2 value with the lowest RMSE (Table 3). 
+
+```{r log-log assumptions, echo = FALSE, echo= FALSE, message = FALSE,include = FALSE,fig.show='hide', fig.height= 4, fig.width= 4, out.width= "49%", fig.align='center', fig.show='hold', fig.cap= "Assumption plots for log-log transformed model", fig.pos= 'h'}
+library(ggfortify)
+log_log <- lm(log_price~ log_living_area + log_land_value + waterfront + bathrooms + new_construct + heat_type + log_lot_size + central_air + log_age + rooms + bedrooms, data = data)
+
+plot3 <- autoplot(log_log, which = 1)
+suppressMessages(ggsave("plot3.png"))
+
+plot4 <- autoplot(log_log, which = 2)
+suppressMessages(ggsave("plot4.png"))
+
+knitr::include_graphics(c("plot3.png", "plot4.png"))
+```
+
+```{r, echo = FALSE}
+log_linear = lm(log_price ~ lot_size + waterfront + age + land_value + new_construct + central_air + heat_type + living_area + bedrooms + bathrooms + rooms, data = data)
+plot5 <- autoplot(log_linear, which = 1)
+suppressMessages(ggsave("plot5.png"))
+
+plot6 <- autoplot(log_linear, which = 2)
+suppressMessages(ggsave("plot6.png"))
+```
+
+## Checking Correlations
+Multi-collinearity within independent variables is important to identify as it may undermine model stability by reducing the precision of the estimated coefficients. The correlation matrix (Figure 1)showed that the living area was highly correlated with bedrooms, rooms, and bathrooms. However, in-sample and out-of-sample performance (Table 1) deteriorated when all 3 variables were removed but remained stable when only “bedrooms” was removed. Further, results for the final model was confirmed with a AIC criterion selection. Thus, bedrooms was dropped to establish the final model. 
+
+## Final Assumption analysis 
+Following the development of the final model using log-log transformation, homogeneity improved with the reduction in the fanning out of data points (Figure 4). Whilst normality improved as some residual points were closer to the reference line, some outliers still exist in the outer edges of the fitted value axis. These outliers could potentially be explained by high wealth inequality in areas like New York, leading to few houses having higher prices than most. Whilst linearity was maintained (symmetrical number of points across zero), the scatterplot showed transformation only improved for 2  out of the 4 variables (Figure 6 vs 7)  highlighting that the linearity assumption is still slightly violated, indicating that future models may need non-parametric tests like a kernel regression analysis. The independency assumption remained the same.
+
+```{r, echo = FALSE, warning=FALSE, message= FALSE,out.width= "90%"}
+#Showing the R^2 and RMSE with bedrooms vs without bedrooms 
+library(caret)
+library(kableExtra, warn.conflicts = FALSE)
+set.seed(123)
+
+#removing all 3 
+collinearity_check <- lm(log_price~ log_living_area + log_land_value + waterfront  + new_construct + heat_type + log_lot_size + central_air + log_age, data = data)
+
+remove_3 <- train(data = data, log_price~ log_living_area + log_land_value + waterfront + new_construct + heat_type + log_lot_size + central_air + log_age, method = "lm", trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE))
+
+no_bedrooms <- train(data = data, log_price~ log_living_area + log_land_value + waterfront + bathrooms + new_construct + heat_type + log_lot_size + central_air + log_age + rooms, method = "lm", trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE))
+
+with_bedrooms <- train(data = data, log_price~ log_living_area + log_land_value + waterfront + bathrooms + new_construct + heat_type + log_lot_size + central_air + log_age + rooms + bedrooms, method = "lm", trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE))
+
+# Creating Table
+
+comp_table1 <- (rbind((remove_3$results[2:4]), no_bedrooms$results[2:4], with_bedrooms$results[2:4]))
+
+rownames(comp_table1)=c("Without bedrooms, rooms and bathroms", "without bedrooms", "with bedrooms")
+
+comp_table1 <- comp_table1 %>%
+  kbl(format= "latex", caption = "Comparison table comparing performance when additional variables are removed", digits = 4) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+comp_table1
+```
+
+## Model Selection
+We decided to drop the bedroom variable from the model as its removal improved RMSE, MAE and $r^2$ values (Table 3). Furthermore, bedrooms had a very high correlation value with living area, thus removing it would reduce multicollinearity. 
+
+
+```{r In-sample performance, message=FALSE, warning=FALSE, echo = FALSE, include = FALSE}
+#in-sample-performance table of R^2 and adjusted R^2 
+
+
+log_log_nobedrooms_final <- lm(log_price~ log_living_area + log_land_value + waterfront + bathrooms + new_construct + heat_type + log_lot_size + central_air + log_age + rooms , data = data)
+#log_log #added bedrooms 
+#log_linear
+
+full_full <- lm(log_price~ log_lot_size + waterfront + log_age + log_land_value + new_construct + central_air + fuel_type + heat_type + sewer_type + log_living_area + log_pct_college + bedrooms + fireplaces + bathrooms + rooms, data=data)
+
+linear_log_model_0 <- lm(price~ log_living_area + log_land_value + waterfront + new_construct + heat_type + log_lot_size + central_air + log_age + rooms + bathrooms, data=data)
+
+#Extracting R^2 and Adjusted R^2 
+
+tab <- matrix(c(summary(log_log_nobedrooms_final)$adj.r.squared, summary(log_log_nobedrooms_final)$r.squared, 
+                summary(full_full)$adj.r.squared, 
+                summary(full_full)$r.squared,
+                summary(log_linear)$adj.r.squared, 
+                summary(log_linear)$r.squared, 
+                summary(linear_log_model_0)$adj.r.squared, 
+                summary(linear_log_model_0)$r.squared), ncol=2, byrow=TRUE)
+
+colnames(tab) <- c('Adjusted R squared','R squared')
+rownames(tab) <- c('Final model','Initial model','Log-Linear', 'Linear-Log')
+tab <- as.table(tab)
+
+# Creating table 
+
+tab <- tab %>%
+  kbl(format= "latex", caption = "Comparison table comparing in-sample performance of different transformation techniques", digits = 3) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+tab
+```
+
+```{r Cross Validations, message=FALSE, warning=FALSE, echo = FALSE,include = FALSE}
+library(caret)
+library(kableExtra, warn.conflicts = FALSE)
+set.seed(123)
+
+log_log_model = train(data=data, log_price~ log_living_area + log_land_value + waterfront + new_construct + heat_type + log_lot_size + central_air + log_age + rooms + bathrooms, method= "lm" , trControl = trainControl(method= "cv", number =10, verboseIter= FALSE))
+
+log_linear_model = train(data=data, log_price~ living_area + land_value + waterfront + new_construct + heat_type + lot_size + central_air + age + rooms + bathrooms, method= "lm" , trControl = trainControl(method= "cv", number =10, verboseIter= FALSE))
+
+linear_log_model = train(data=data, price~ log_living_area + log_land_value + waterfront + new_construct + heat_type + log_lot_size + central_air + log_age + rooms + bathrooms, method= "lm" , trControl = trainControl(method= "cv", number =10, verboseIter= FALSE))
+
+full_log_log_model = train(data=data, log_price~ log_lot_size + waterfront + log_age + log_land_value + new_construct + central_air + fuel_type + heat_type + sewer_type + log_living_area + log_pct_college + bedrooms + fireplaces + bathrooms + rooms, method= "lm" , trControl = trainControl(method= "cv", number =10, verboseIter= FALSE))
+
+simple_model=train(data=data, log_price~  log_living_area, method= "lm" , trControl = trainControl(method= "cv", number =10, verboseIter= FALSE))
+
+
+# Creating table 
+
+comp_table2 <- (rbind(full_log_log_model$results[2:4], log_log_model$results[2:4], log_linear_model$results[2:4], linear_log_model$results[2:4], simple_model$results[2:4]))
+
+rownames(comp_table2)=c("Full Log Model", "Log-Log Model", "Log-Linear Model", "Linear-Log Model", "Simple Model")
+
+comp_table2 <- comp_table2 %>%
+  kbl(format= "latex", format.args = list(scientific = FALSE), digits = 4, caption = "Comparison table comparing performance of different transformation techniques") %>%
+  kable_styling(latex_options = "HOLD_position")
+
+comp_table2
+```
+
+
+```{r, echo= FALSE, fig.cap="RMSE and MAE comparison for simple, original and selected models", fig.width= 4, fig.height= 4, fig.pos= "h", out.width= "49%", fig.show='hold',include=FALSE}
+#Final graphs comparing full, simple, and our model 
+
+results <- caret:: resamples(list(selected=log_log_model, original=full_log_log_model, simple=simple_model ))
+
+plot10 <- ggplot(results, metric="RMSE")+ labs(y="RMSE") + ggtitle("Comparing the RMSE for the selected, initial and simple model ")
+suppressMessages(ggsave("plot10.png"))
+
+plot11 <- ggplot(results, metric="MAE")+ labs(y="MAE") + ggtitle("Comparing the MAE for the selected, initial and simple model ")
+suppressMessages(ggsave("plot11.png"))
+
+knitr::include_graphics(c("plot10.png", "plot11.png"))
+```
+
+# Results
+
+## Final Model
+
+```{r, echo= FALSE}
+library(equatiomatic)
+final_model <- lm(log_price ~ log_living_area + log_land_value + waterfront + new_construct + heat_type + log_lot_size + central_air + log_age + rooms + bathrooms, data = data)
+
+extract_eq(final_model, wrap = T, terms_per_line = 2, use_coefs = T, 
+           coef_digits = 3)
+```
+The model’s **in-sample performance** was checked using F-test values, $R^2$ (explanatory power of independent variables), and the adjusted $R^2$ figure. With an F-test value 207.8 the  p-value of 2.2 e-16 is less than the significant value of 5%, providing sufficient evidence that the final model fits the data better than a model with no independent variables. The final model’s $R^2$ analysis was overshadowed by the full model’s (no variables removed) value, assumed due to having more variables. However, the adjusted $R^2$ figure for both figures was equivalent (Table 2), indicating the final model’s efficiency. 
+
+```{r In-sample performances, message=FALSE, warning=FALSE, echo = FALSE}
+tab <- matrix(c(summary(log_log_nobedrooms_final)$adj.r.squared, summary(log_log_nobedrooms_final)$r.squared, 
+                summary(full_full)$adj.r.squared, 
+                summary(full_full)$r.squared,
+                summary(log_linear)$adj.r.squared, 
+                summary(log_linear)$r.squared, 
+                summary(linear_log_model_0)$adj.r.squared, 
+                summary(linear_log_model_0)$r.squared), ncol=2, byrow=TRUE)
+colnames(tab) <- c('Adjusted R squared','R squared')
+rownames(tab) <- c('Final model','Initial model','Log-Linear', 'Linear-Log')
+tab <- as.table(tab)
+
+# Creating table 
+
+tab <- tab %>%
+  kbl(format= "latex", caption = "Comparison table comparing in-sample performance of different transformation techniques", digits = 3) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+tab
+```
+The model’s **out-of-sample performance** was checked using a 10-fold cross-validation model  (Kuhn, 2022) to extract Mean Absolute Error (MAE) and Root-Squared Mean Error (RMSE). Whilst the final model had the lowest RMSE and MAE compared to all other models (Table 3), the differences were marginal except compared to the simple model (simple linear regression with living_area which correlated the most with price). This indicates that the final model predicts the dependent variable better than the singular independent variables. 
+
+Interestingly, the interval of MAE for the selected final model was much narrower (Figure 2b.) compared to the initial and single model indicating the strength of the final model- MAE is a much better evaluation metric for the current model given its power to adjust for outliers compared to RMSE. 
+
+```{r Cross Validation, message=FALSE, warning=FALSE, echo = FALSE}
+comp_table2 <- (rbind((full_log_log_model$results[2:4]), log_log_model$results[2:4], log_linear_model$results[2:4], linear_log_model$results[2:4], simple_model$results[2:4]))
+
+rownames(comp_table2)=c("Full Log Model", "Log-Log Model", "Log-Linear Model", "Linear-Log Model", "Simple Model")
+
+comp_table2 <- comp_table2 %>%
+  kbl(format= "latex", caption = "Comparison table comparing performance of different transformation techniques", digits = 4) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+comp_table2
+```
+
+# Discussion
+
+## Limitations
+**1.** The initial data may be subjected to **measurement bias** as there is no evidence to probe if all measurement techniques (i.e lot_size) were centralised for all houses. Furthermore, the data may create **selection bias** as the county of Saratoga is not representative of the entire state of New York, leading to incorrect evaluation of predictors impacting housing prices in this state. 
+**2.** Due to the inflationary nature of house prices,  predictive model may not be useful for any year beyond 2006. To be of use across multiple years, the model could be multiplied by a common inflationary factor. 
+**3.** The final model presented was fairly weak with an adjusted R-squared value of 0.59, indicating that either the predictors had a non-linear or another type of relationship (i.e. parabolic) with price or the model required better independent variables. Stronger extrinsic factors such as macroeconomic variables like interest rates, distances to schools and jobs could have been integrated into the model. Further, non-parametric regression models could have been used considering the slight violation of normality and linearity assumptions. 
+**4.** The AIC selection method has limitations like the p-values being be too low due to multiple comparisons (Harrel, 2001), leading to erroneous model selection. In the future, model results could be be compared to other methods like the Bayenesian Information Criteria (BIC).  
+
+
+## Conclusion
+
+After removing variables through backwards and forwards elimination while also removing additional variables due to multicollinearity, our final model found 10 significant variables that can predict New York City house prices with an RMSE of 0.2906 and an MAE of 0.2071. For example, a 1% change in living area would increase house prices by 0.49%, holding all other variables constant. A one unit increase in rooms would lead to a 1.1% increase in price on average, holding all other variables constant. An MAE of 0.2071 means that the predictions and true value may vary by 0.2071. However, our model has an $r^2$ value of only 0.5958, meaning only 59.98% of the variability in house prices can be explained by our model. There is still room for improvement for predicting house prices in NYC through the utilization of other machine learning algorithms.
+
+
+# References 
+Allaire, J.J., Xie et al. (2022). rmarkdown: Dynamic Documents for R. [online] R-Packages. Available at: https://CRAN.R-project.org/package=rmarkdown [Accessed 17 Sep. 2022].
+
+ASA Community. (n.d.). Community.amstat.org. Retrieved November 6, 2022, from https://community.amstat.org/stats101/home
+‌Harrell, F. (2001). Regression Modeling Strategies [Review of Regression Modeling Strategies].
+
+Max Kuhn. (2022). caret: Classification and Regression Training. R package version 6.0-93. https://CRAN.R-project.org/package=caret
+
+Wickham (2017). Easily Install and Load the ‘Tidyverse’ [R package tidyverse version 1.2.1]. R-project.org. [online] doi:https://CRAN.R-project.org/package=tidyverse.
+
+Wickham, H., François, R., Henry, L., Müller, K. and RStudio (2020). dplyr: A Grammar of Data Manipulation. [online] R-Packages. Available at: https://cran.r-project.org/web/packages/dplyr/index.html.
+Xie Y (2022). knitr: A General-Purpose Package for Dynamic Report Generation in R. R package version 1.40, https://yihui.org/knitr/.
+
+\newpage
+
+# Appendix
+
+```{r, echo= FALSE, fig.cap="RMSE and MAE comparison for simple, original and selected models", fig.width= 4, fig.height= 4, fig.pos= "h", out.width= "49%", fig.show='hold'}
+#Final graphs comparing full, simple, and our model 
+
+results <- caret:: resamples(list(selected=log_log_model, original=full_log_log_model, simple=simple_model ))
+
+plot10 <- ggplot(results, metric="RMSE")+ labs(y="RMSE") + ggtitle("Comparing the RMSE for the selected, initial and simple model ")
+suppressMessages(ggsave("plot10.png"))
+
+plot11 <- ggplot(results, metric="MAE")+ labs(y="MAE") + ggtitle("Comparing the MAE for the selected, initial and simple model ")
+suppressMessages(ggsave("plot11.png"))
+
+knitr::include_graphics(c("plot10.png", "plot11.png"))
+```
+
+```{r Assumption check simple, echo= FALSE,fig.show='hide', message = FALSE, fig.height= 4, fig.width= 4, out.width= "49%", fig.align='center', fig.show='hold', fig.cap= "Residual and QQplot for model selected through AIC method", fig.pos= 'h'}
+library(ggfortify)
+v1_model=lm(price ~ living_area + land_value + bathrooms + waterfront + new_construct + heat_type + lot_size + central_air + age + rooms + bedrooms, data=data)
+
+plot1 <- autoplot(v1_model, which = 1)
+
+suppressMessages(ggsave("plot1.png"))
+
+plot2 <- autoplot(v1_model, which = 2)
+
+suppressMessages(ggsave("plot2.png"))
+knitr::include_graphics(c("plot1.png","plot2.png"))
+```
+
+```{r log-log assumption, echo = FALSE, echo= FALSE, message = FALSE,fig.show='hide', fig.height= 4, fig.width= 4, out.width= "49%", fig.align='center', fig.show='hold', fig.cap= "Residual vs Fitted and QQplot for log-log transformed model", fig.pos= 'h'}
+library(ggfortify)
+log_log <- lm(log_price~ log_living_area + log_land_value + waterfront + bathrooms + new_construct + heat_type + log_lot_size + central_air + log_age + rooms + bedrooms, data = data)
+
+plot3 <- autoplot(log_log, which = 1)
+suppressMessages(ggsave("plot3.png"))
+
+plot4 <- autoplot(log_log, which = 2)
+suppressMessages(ggsave("plot4.png"))
+
+knitr::include_graphics(c("plot3.png", "plot4.png"))
+```
+
+```{r, echo = FALSE, echo= FALSE, message = FALSE, fig.height= 4, fig.width= 4, out.width= "49%", fig.align='center', fig.show='hold', fig.cap= "Residual vs Fitted and QQplot for log-linear transformed model", fig.pos= 'h'}
+log_linear = lm(log_price ~ lot_size + waterfront + age + land_value + new_construct + central_air + heat_type + living_area + bedrooms + bathrooms + rooms, data = data)
+plot5 <- autoplot(log_linear, which = 1)
+suppressMessages(ggsave("plot5.png"))
+
+plot6 <- autoplot(log_linear, which = 2)
+suppressMessages(ggsave("plot6.png"))
+knitr::include_graphics(c("plot5.png", "plot6.png"))
+```
+
+```{r, echo= FALSE, results='hide',fig.cap="Scatterplots of independent variables vs price selected from stepwise selection model", fig.width= 4, fig.height= 4, fig.pos= "h", out.width= "75%", fig.show='hold',warning=FALSE, message=FALSE}
+library(dplyr)
+library(gridExtra)
+
+linearity_graph1 = data %>% ggplot() + 
+  aes(x = living_area, y = price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Living Area ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against Living Area") +
+  geom_smooth(method = "lm", se = FALSE)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+linearity_graph2 = data %>% ggplot() + 
+  aes(x = land_value, y = price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Land Value ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against Land Value") +
+  geom_smooth(method = "lm", se = FALSE)+
+theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+
+
+linearity_graph3 = data %>% ggplot() + 
+  aes(x = lot_size, y = price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Lot Size ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against Lot Size") +
+  geom_smooth(method = "lm", se = FALSE)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+linearity_graph4 = data %>% ggplot() + 
+  aes(x = age, y = price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Age ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against Age") +
+  geom_smooth(method = "lm", se = FALSE)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+
+
+grid.arrange(linearity_graph1, linearity_graph2, linearity_graph3, linearity_graph4, ncol=2)
+
+
+
+#convert everything except living area into log. 
+```
+
+```{r, echo= FALSE, results='hide',fig.cap="Scatterplots of independent variables vs price selected from the final model", fig.width= 4, fig.height= 4, fig.pos= "h", out.width= "75%", fig.show='hold',warning=FALSE, message=FALSE}
+#combining all 4 graphs 
+
+
+linearity_graph5 = data %>% ggplot() + 
+  aes(x = log_living_area, y = log_price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Living Area ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against log(Living Area)") +
+  geom_smooth(method = "lm", se = FALSE)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+linearity_graph6 = data %>% ggplot() + 
+  aes(x = log_land_value, y = log_price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Land Value ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against log(Land Value)") +
+  geom_smooth(method = "lm", se = FALSE)+
+theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+linearity_graph7 = data %>% ggplot() + 
+  aes(x = log_lot_size, y = log_price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Lot Size ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against log(Lot Size)") +
+  geom_smooth(method = "lm", se = FALSE)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+linearity_graph8 = data %>% ggplot() + 
+  aes(x = log_age, y = log_price) + 
+  geom_point(size = 1) + 
+  theme_classic(base_size = 7) + 
+  labs(x = "Age ",
+       y = "Price",
+       caption = "Scatterplot of Price plotted against log(Age)") +
+  geom_smooth(method = "lm", se = FALSE)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+grid.arrange(linearity_graph5, linearity_graph6, linearity_graph7, linearity_graph8, ncol=2)
+
+```
