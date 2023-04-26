@@ -3,11 +3,10 @@ title: A multi-variate prediction model to determine housing prices in New York
 
 # Use letters for affiliations
 author:
-  - name: Ethan Yong (510067773), Sandithi Lewanda (500545654), Bradon Holland (500695269), Michael Nguyen (510249955), Dan Mahesh (500501362)
+  - name: Ethan Yong, Sandithi Lewanda, Bradon Holland, Michael Nguyen, Dan Mahesh
 
 keywords:
-  - CC07E2
-  - Github - https://github.sydney.edu.au/bhol6947/CC07E2
+  - Github - https://github.com/ethanyongg/Personal-Projects
 
 # Optional: line of arbitrary text with additional information.
 # Could be used, for example, to mention the bibliographic info in a post-print.
@@ -18,7 +17,7 @@ keywords:
 #lead_author_surname: Author and Author
 
 # Place eg a DOI URL or CRAN Package URL here
-doi_footer: "https://github.sydney.edu.au/bhol6947/CC07E2"
+doi_footer: "https://github.com/ethanyongg/Personal-Projects"
 
 # Abstract
 abstract: |
@@ -44,7 +43,6 @@ bibliography: pinp
 
 
 # Customize footer, eg by referencing the vignette
-footer_contents: "CC07E2"
 
 # Produce a pinp document
 output: pinp::pinp
